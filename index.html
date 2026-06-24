@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>诡异小游戏</title>
+  <title>GraphWar 网页单人版 - 数学函数弹道物理游戏</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome 图标库 -->
@@ -128,18 +128,24 @@
 
           <!-- 解析式输入大框 -->
           <form id="fire-form" class="flex flex-col md:flex-row gap-3">
-            <div class="relative flex-1">
+            <div class="relative flex-1 bg-slate-950 border border-slate-800 rounded-lg focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500/20 transition">
+              <!-- 行内自动补全幽灵提示文本 -->
+              <div id="autocomplete-ghost" class="absolute left-0 right-0 top-1/2 -translate-y-1/2 pl-12 pr-20 py-3.5 text-lg code-font text-slate-600/50 select-none pointer-events-none tracking-wide font-bold whitespace-pre overflow-hidden"></div>
+              
+              <!-- Tab 补全提示小徽章 -->
+              <div id="autocomplete-badge" class="absolute right-10 top-1/2 -translate-y-1/2 text-[10px] bg-slate-800/90 border border-slate-700 text-slate-400 px-1.5 py-0.5 rounded font-mono select-none pointer-events-none hidden">Tab 补全</div>
+              
               <span class="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-400 font-bold text-lg code-font">y =</span>
               <input 
                 type="text" 
                 id="formula-input" 
-                class="w-full pl-12 pr-10 py-3.5 bg-slate-950 border border-slate-800 rounded-lg text-lg focus:outline-none focus:border-cyan-500 text-cyan-300 font-bold code-font tracking-wide"
+                class="w-full pl-12 pr-20 py-3.5 bg-transparent text-lg focus:outline-none text-cyan-300 font-bold code-font tracking-wide"
                 placeholder="0.5 * x + 4"
                 autocomplete="off"
                 spellcheck="false"
               >
               <!-- 一键清空 -->
-              <button type="button" id="clear-input-btn" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+              <button type="button" id="clear-input-btn" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 z-10">
                 <i class="fa-solid fa-circle-xmark"></i>
               </button>
             </div>
@@ -584,7 +590,7 @@
           { type: 'circle', x: 1, y: 0, radius: 2.5, label: "中心路障" }
         ],
         ammo: 5,
-        hint: "提示：有两个怪物！可以使用多发子弹分别击灭，也可以用复杂的奇妙公式。"
+        hint: "提示：有两个怪物！可以使用多发子弹分别击灭，也可以用复杂的奇妙公式。试试：abs(x) - 4"
       },
       {
         id: 5,
@@ -598,7 +604,7 @@
           { type: 'circle', x: 4, y: -1, radius: 2.2, label: "斥力力场" }
         ],
         ammo: 5,
-        hint: "提示：多重力场交织！发挥出你全部的数学智慧吧。"
+        hint: "提示：多重力场交织！发挥出你全部的数学智慧吧。试试：0.08 * (x + 3)^2 - 4"
       }
     ];
 
@@ -641,6 +647,10 @@
     const toggleSoundBtn = document.getElementById('toggle-sound-btn');
     const soundIcon = document.getElementById('sound-icon');
     
+    // 自动补全新加 DOM 元素
+    const autocompleteGhost = document.getElementById('autocomplete-ghost');
+    const autocompleteBadge = document.getElementById('autocomplete-badge');
+    
     // 弹层 DOM
     const gameModal = document.getElementById('game-modal');
     const modalTitle = document.getElementById('modal-title');
@@ -674,6 +684,66 @@
       return { x: mx, y: my };
     }
 
+    // ==================== 智能补全与提示系统逻辑 ====================
+    function getRecommendedFormula() {
+      if (isEndlessMode) {
+        return "2 * sin(x)"; // 无尽模式默认推荐快捷公式
+      }
+      if (!levelData || !levelData.hint) return "";
+      const parts = levelData.hint.split("试试：");
+      return parts[1] ? parts[1].trim() : "";
+    }
+
+    function updateAutocomplete() {
+      const rec = getRecommendedFormula();
+      const val = formulaInput.value;
+
+      if (!rec) {
+        autocompleteGhost.innerHTML = '';
+        autocompleteBadge.classList.add('hidden');
+        return;
+      }
+
+      // 如果输入框为空，展示半透明推荐全公式，并点亮小徽章
+      if (!val) {
+        autocompleteGhost.innerHTML = `<span class="opacity-30">${rec}</span>`;
+        autocompleteBadge.classList.remove('hidden');
+      } 
+      // 如果输入匹配前缀（不区分大小写）
+      else if (rec.toLowerCase().startsWith(val.toLowerCase())) {
+        const typedPart = val;
+        const remainingPart = rec.slice(typedPart.length);
+        // 使用透明不可见的<span>将已输入字符占满，确保剩下的尾部提示文字在等宽字体下完美像素对齐
+        autocompleteGhost.innerHTML = `<span class="opacity-0">${typedPart}</span><span class="opacity-40">${remainingPart}</span>`;
+        autocompleteBadge.classList.remove('hidden');
+      } 
+      // 不匹配则隐藏幽灵补全提示
+      else {
+        autocompleteGhost.innerHTML = '';
+        autocompleteBadge.classList.add('hidden');
+      }
+    }
+
+    // 绑定 Tab 键补全按键监听
+    formulaInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') {
+        const rec = getRecommendedFormula();
+        const val = formulaInput.value;
+        if (rec) {
+          // 如果为空，或输入的字符匹配推荐公式开头
+          if (!val || rec.toLowerCase().startsWith(val.toLowerCase())) {
+            e.preventDefault(); // 阻止浏览器原本切换 input 焦点的默认行为
+            formulaInput.value = rec;
+            updateAutocomplete();
+            showFeedback("💡 已自动装填推荐公式！", "cyan");
+          }
+        }
+      }
+    });
+
+    // 监控输入框字符变化
+    formulaInput.addEventListener('input', updateAutocomplete);
+
     // ==================== 关卡加载与生成器 ====================
     function loadLevel(idx, resetAmmoAndScore = false) {
       isEndlessMode = false;
@@ -693,6 +763,7 @@
       particles = [];
 
       updateUI();
+      updateAutocomplete(); // 重设补全提示
       draw();
       showFeedback(`已装载关卡: ${levelData.name}`);
     }
@@ -707,7 +778,7 @@
         enemies: [],
         obstacles: [],
         ammo: 4,
-        hint: "无尽模式：利用你所学，算准小怪坐标。每一击都更显重要！"
+        hint: "无尽模式：利用你所学，算准小怪坐标。每一击都更显重要！试试：2 * sin(x)"
       };
 
       // 1. 生成 1~3 个敌人
@@ -741,6 +812,7 @@
       particles = [];
 
       updateUI();
+      updateAutocomplete(); // 重设补全提示
       draw();
       showFeedback(`无尽关卡随机生成完毕！`);
     }
@@ -818,7 +890,7 @@
       if (!isEndlessMode) {
         formulaInput.placeholder = LEVELS[currentLevelIndex].hint.split("试试：")[1] || "输入函数...";
       } else {
-        formulaInput.placeholder = "2 * sin(x) + 1";
+        formulaInput.placeholder = "2 * sin(x)";
       }
     }
 
@@ -1126,6 +1198,7 @@
       // 先扣除1发弹药
       levelData.ammo--;
       updateUI();
+      updateAutocomplete(); // 发射后重新判断补全
 
       // 禁用发射按钮避免重复干扰
       fireBtn.disabled = true;
@@ -1337,6 +1410,7 @@
     clearInputBtn.addEventListener('click', () => {
       formulaInput.value = '';
       formulaInput.focus();
+      updateAutocomplete(); // 清空时重设补全状态
     });
 
     // 快捷数学按键插入逻辑
@@ -1353,6 +1427,7 @@
         // 重新设定光标位置
         const newCursorPos = pos + val.length;
         formulaInput.setSelectionRange(newCursorPos, newCursorPos);
+        updateAutocomplete(); // 快捷键插入时更新补全提示
       });
     });
 
@@ -1362,6 +1437,7 @@
         const formula = card.getAttribute('data-formula');
         formulaInput.value = formula;
         formulaInput.focus();
+        updateAutocomplete(); // 装填公式后更新补全提示
         showFeedback(`🎯 已加载战术公式: ${formula}`);
       });
     });
